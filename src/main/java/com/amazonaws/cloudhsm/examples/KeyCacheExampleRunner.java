@@ -25,6 +25,7 @@ import java.security.GeneralSecurityException;
 import java.security.Key;
 import java.security.KeyStore;
 import java.security.Security;
+import java.security.UnrecoverableKeyException;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -75,9 +76,10 @@ public class KeyCacheExampleRunner {
 
         /**
          * Returns the cached key, or null if no key has the label (null is not cached). KeyStore.getKey()
-         * is only called the first time a label is used. Throws IllegalStateException if the lookup fails,
-         * for example UnrecoverableKeyException when two keys share the label (see getCause()). Unchecked
-         * CloudHSM exceptions, such as KeyUsageException, are not wrapped.
+         * is only called the first time a label is used. Throws IllegalStateException if the lookup fails:
+         * "More than one key has the label" when two keys share the label (UnrecoverableKeyException), or
+         * "Key lookup failed" for other keystore errors. The original exception is the cause.
+         * Unchecked CloudHSM exceptions, such as KeyUsageException, are not wrapped.
          */
         public Key get(final String label) {
             return keys.computeIfAbsent(
@@ -87,6 +89,9 @@ public class KeyCacheExampleRunner {
                             getKeyCalls.incrementAndGet();
                             // CloudHSM does not use the key password, so null is passed.
                             return keyStore.getKey(l, null);
+                        } catch (final UnrecoverableKeyException e) {
+                            // Two keys share the label.
+                            throw new IllegalStateException("More than one key has the label: " + l, e);
                         } catch (final GeneralSecurityException e) {
                             // The lambda cannot throw checked exceptions, and nothing is cached on failure.
                             throw new IllegalStateException("Key lookup failed: " + l, e);
